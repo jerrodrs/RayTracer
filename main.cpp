@@ -10,6 +10,12 @@
 #include <stdio.h>
 #include <time.h>
 
+#include "Vect.h"
+#include "Ray.h"
+#include "Camera.h"
+#include "Color.h"
+#include "Light.h"
+
 using namespace std;
 
 struct RGBType {
@@ -95,6 +101,31 @@ int main(int argc, char *argv[]){
 	int dpi = 72;
 	int n = width * height;
 	RGBType *pixels = new RGBType[n];
+
+	Vect X (1,0,0);
+	Vect Y (0,1,0);
+	Vect Z (0,0,1);
+
+	Vect campos (3, 1.5, -4);
+
+	Vect look_at (0,0,0); //direction of camera
+	Vect diff_btw (campos.getVectX() - look_at.getVectX(), campos.getVectY() - look_at.getVectY(), campos.getVectZ() - look_at.getVectZ()); //difference between camera's coor - look at
+
+	Vect camdir = diff_btw.negative().normalize();
+	Vect camright = Y.crossProduct(camdir).normalize();
+	Vect camdown = camright.crossProduct(camdir);
+
+	Camera scene_cam (campos, camdir, camright, camdown);
+
+	Color white_light (1.0, 1.0, 1.0, 0);
+	Color pretty_green (0.5, 1.0, 0.5, 0.3);
+	Color gray (0.5, 0.5, 0.5, 0);
+	Color black (0.0, 0.0 ,0.0 ,0);
+
+	Vect light_pos (-7, 10, -10);
+	Light scene_light (light_pos,white_light);
+
+
 
 
 	for (int x = 0; x < width; x++){
