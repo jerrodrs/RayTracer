@@ -20,7 +20,7 @@ public:
 
 	Vect getPlaneNormal() {return normal;}
 	double getPlaneDistance() {return distance;}
-	Color getPlaneColor() {return color;}
+	Color getColor() {return color;}
 
 	Vect getNormalAt (Vect point){
 		return normal;

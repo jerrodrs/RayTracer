@@ -11,10 +11,13 @@ public:
 	Object ();
 
 	//methods
-	Color getObjectColor() {return Color (0.0, 0.0, 0.0, 0);}
+	virtual Color getColor() {return Color (0.0, 0.0, 0.0, 0);}
 
-	double findIntersection(Ray);
+	virtual double findIntersection(Ray);
 
+	virtual Vect getNormalAt (Vect point){
+		return Vect (0,0,0);
+	}
 
 };
 

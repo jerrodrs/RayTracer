@@ -20,7 +20,7 @@ public:
 
 	Vect getSphereCenter() {return center;}
 	double getSphereRadius() {return radius;}
-	Color getSphereColor() {return color;}
+	Color getColor() {return color;}
 
 	Vect getNormalAt(Vect);
 

@@ -1,8 +1,11 @@
 
 all: RayTrace 
 
-RayTrace: main.o Vect.o Ray.o Camera.o Light.o Color.o Sphere.o Object.o Plane.o
-	g++ -o RayTrace main.o Vect.o Ray.o Camera.o Light.o Color.o Sphere.o Object.o Plane.o
+RayTrace: main.o Vect.o Ray.o Camera.o Light.o Color.o Sphere.o Object.o Plane.o Source.o
+	g++ -o RayTrace main.o Vect.o Ray.o Camera.o Light.o Color.o Sphere.o Object.o Plane.o Source.o
+
+Source.o: Source.cpp
+	g++ -c Source.cpp 
 
 Plane.o: Plane.cpp
 	g++ -c Plane.cpp 
