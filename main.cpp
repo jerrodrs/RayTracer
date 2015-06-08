@@ -9,6 +9,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <time.h>
+#include <ctime>
+#include <SDL/SDL.h>
 
 #include "Vect.h"
 #include "Ray.h"
@@ -27,6 +29,13 @@ struct RGBType {
 	double g;
 	double b;
 };
+
+const int width = 640;
+const int height = 480;
+
+SDL_Window *window;
+SDL_Renderer *renderer;
+
 
 void savebmp (const char *filename, int w, int h, int dpi, RGBType *data){
 	FILE *f;
@@ -164,6 +173,7 @@ Color getColorAt(Vect intersection_position, Vect intersecting_ray_direction, ve
 
 			vector<double> secondary_intersections;
 
+
 			for (int object_index = 0; object_index < scene_objects.size() && shadowed == false; object_index++){
 				secondary_intersections.push_back(scene_objects.at(object_index)->findIntersection(shadow_ray));
 			}
@@ -203,121 +213,196 @@ Color getColorAt(Vect intersection_position, Vect intersecting_ray_direction, ve
 	return final_color.clip();
 }
 
+bool init()
+{
+	//Initialization flag
+	bool success = true;
+
+	//Initialize SDL
+	if( SDL_Init( SDL_INIT_VIDEO ) < 0 )
+	{
+		printf( "SDL could not initialize! SDL_Error: %s\n", SDL_GetError() );
+		success = false;
+	}
+	else
+	{
+		//Create window
+		SDL_CreateWindowAndRenderer(width, height, 0, &window, &renderer);
+	}
+
+	return success;
+}
+
+
+void close()
+{
+	//Destroy window
+	SDL_DestroyWindow( window );
+	window = NULL;
+
+	//Quit SDL subsystems
+	SDL_Quit();
+}
+
 
 int curPixelLoc;
 
 int main(int argc, char *argv[]){
 
-	cout << "Rendering..." << endl;
 
-	//image settings
-	int width = 640;
-	int height = 480;
-	int dpi = 72;
-	int n = width * height;
-	RGBType *pixels = new RGBType[n];
-	double aspectratio = (double)width/(double)height;
-	double ambientlight = 0.2;
-	double accuracy = 0.000001;
+	//Start up SDL and create window
+	if( !init() )
+	{
+		printf( "Failed to initialize!\n" );
+	}
+	else
+	{	
+		//Main loop flag
+		bool quit = false;
+		bool singleRender = false;
 
-	Vect origin (0,0,0);
-	Vect X (1,0,0);
-	Vect Y (0,1,0);
-	Vect Z (0,0,1);
+		//Event handler
+		SDL_Event e;
 
-	Vect campos (3, 1.5, -4);
-
-	Vect look_at (0,0,0); //direction of camera
-	Vect diff_btw (campos.getVectX() - look_at.getVectX(), campos.getVectY() - look_at.getVectY(), campos.getVectZ() - look_at.getVectZ()); //difference between camera's coor - look at
-
-	Vect camdir = diff_btw.negative().normalize();
-	Vect camright = Y.crossProduct(camdir).normalize();
-	Vect camdown = camright.crossProduct(camdir);
-
-	Camera scene_cam (campos, camdir, camright, camdown);
-
-	Color white_light (1.0, 1.0, 1.0, 0);
-	Color pretty_green (0.5, 1.0, 0.5, 0.3);
-	Color maroon (0.5, 0.25, 0.25, 0);
-	Color gray (0.5, 0.5, 0.5, 0);
-	Color black (0.0, 0.0 ,0.0 ,0);
-
-	Vect light_pos (-7, 10, -10);
-	Light scene_light (light_pos,white_light);
-	vector<Source*> light_sources;
-	light_sources.push_back(dynamic_cast<Source*>(&scene_light));
-
-	Vect t (0,2,0);
-	Sphere scene_sphere (origin, 0.5, pretty_green);
-	Sphere scene_sphere2 (t, 0.2, pretty_green);
-	Plane scene_plane (Y, -1, maroon);
-
-	vector<Object*> scene_objects;
-	scene_objects.push_back(dynamic_cast<Object*>(&scene_sphere));
-	scene_objects.push_back(dynamic_cast<Object*>(&scene_sphere2));
-	scene_objects.push_back(dynamic_cast<Object*>(&scene_plane));
-
-	double xamnt, yamnt;
-
-	for (int x = 0; x < width; x++){
-		for (int y  = 0; y < height; y++){
-			curPixelLoc = y*width + x;
-
-			//start with no anti aliasing
-			if (width > height) {
-				//the image is wider than tall
-				xamnt = ((x+0.5)/width)*aspectratio - (((width-height)/(double)height)/2);
-				yamnt = ((height -y) + 0.5)/height;
-			}else if (height > width){
-				//the image is taller than wide
-				xamnt = (x+0.5)/ width;
-				yamnt = (((height - y) + 0.5)/height)/aspectratio - (((height - width)/(double)width)/2);
-			}else{
-				//the image is square
-				xamnt = (x+0.5)/width;
-				yamnt = ((height - y) + 0.5)/height;
+		//While application is running
+		while( !quit )
+		{
+			//Handle events on queue
+			while( SDL_PollEvent( &e ) != 0 )
+			{
+				//User requests quit
+				if( e.type == SDL_QUIT )
+				{
+					quit = true;
+				}
 			}
 
-			Vect cam_ray_origin = scene_cam.getCameraPosition();
-			Vect cam_ray_direction = camdir.vectAdd(camright.vectMult(xamnt - 0.5).vectAdd(camdown.vectMult(yamnt - 0.5))).normalize();
+			if (singleRender == false){
+				clock_t start;
+				double duration;
+				start = clock();
+				cout << "Rendering..." << endl;
 
-			Ray cam_ray (cam_ray_origin, cam_ray_direction);
+				//image settings
+				int dpi = 72;
+				int n = width * height;
+				RGBType *pixels = new RGBType[n];
+				double aspectratio = (double)width/(double)height;
+				double ambientlight = 0.2;
+				double accuracy = 0.000001;
 
-			vector<double> intersections;
+				Vect origin (0,0,0);
+				Vect X (1,0,0);
+				Vect Y (0,1,0);
+				Vect Z (0,0,1);
 
-			for (int index = 0; index < scene_objects.size(); index++){
-				//loops through each object in scene and finds intersection
-				intersections.push_back(scene_objects.at(index)->findIntersection(cam_ray));
-			}
+				Vect campos (3, 1.5, -4);
 
-			int index_of_winning_object = winningObjectIndex(intersections);
+				Vect look_at (0,0,0); //direction of camera
+				Vect diff_btw (campos.getVectX() - look_at.getVectX(), campos.getVectY() - look_at.getVectY(), campos.getVectZ() - look_at.getVectZ()); //difference between camera's coor - look at
+
+				Vect camdir = diff_btw.negative().normalize();
+				Vect camright = Y.crossProduct(camdir).normalize();
+				Vect camdown = camright.crossProduct(camdir);
+
+				Camera scene_cam (campos, camdir, camright, camdown);
+
+				Color white_light (1.0, 1.0, 1.0, 0);
+				Color pretty_green (0.5, 1.0, 0.5, 0.3);
+				Color maroon (0.5, 0.25, 0.25, 0);
+				Color gray (0.5, 0.5, 0.5, 0);
+				Color black (0.0, 0.0 ,0.0 ,0);
+
+				Vect light_pos (-7, 10, -10);
+				Light scene_light (light_pos,white_light);
+				vector<Source*> light_sources;
+				light_sources.push_back(dynamic_cast<Source*>(&scene_light));
+
+				Vect t (0,2,0);
+				Sphere scene_sphere (origin, 2, pretty_green);
+				Plane scene_plane (Y, -1, maroon);
+
+				vector<Object*> scene_objects;
+				scene_objects.push_back(dynamic_cast<Object*>(&scene_sphere));
+				scene_objects.push_back(dynamic_cast<Object*>(&scene_plane));
+
+				double xamnt, yamnt;
+
+				for (int x = 0; x < width; x++){
+					for (int y  = 0; y < height; y++){
+						curPixelLoc = y*width + x;
+
+						//start with no anti aliasing
+						if (width > height) {
+							//the image is wider than tall
+							xamnt = ((x+0.5)/width)*aspectratio - (((width-height)/(double)height)/2);
+							yamnt = ((height -y) + 0.5)/height;
+						}else if (height > width){
+							//the image is taller than wide
+							xamnt = (x+0.5)/ width;
+							yamnt = (((height - y) + 0.5)/height)/aspectratio - (((height - width)/(double)width)/2);
+						}else{
+							//the image is square
+							xamnt = (x+0.5)/width;
+							yamnt = ((height - y) + 0.5)/height;
+						}
+
+						Vect cam_ray_origin = scene_cam.getCameraPosition();
+						Vect cam_ray_direction = camdir.vectAdd(camright.vectMult(xamnt - 0.5).vectAdd(camdown.vectMult(yamnt - 0.5))).normalize();
+
+						Ray cam_ray (cam_ray_origin, cam_ray_direction);
+
+						vector<double> intersections;
+
+						for (int index = 0; index < scene_objects.size(); index++){
+							//loops through each object in scene and finds intersection
+							intersections.push_back(scene_objects.at(index)->findIntersection(cam_ray));
+						}
+
+						int index_of_winning_object = winningObjectIndex(intersections);
 
 
-			if (index_of_winning_object == -1){
-				//set background to black
-				pixels[curPixelLoc].r = 0;
-				pixels[curPixelLoc].g = 0;
-				pixels[curPixelLoc].b = 0;
-			}else{
-				//index is a hit on an object in the scene
-				if (intersections.at(index_of_winning_object) > accuracy){
-					//determine the position and direction vectors at the point of intersection
+						if (index_of_winning_object == -1){
+							//set background to black
+							SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+							SDL_RenderDrawPoint(renderer, x, abs(y-height));
+							//pixels[curPixelLoc].r = 0;
+							//pixels[curPixelLoc].g = 0;
+							//pixels[curPixelLoc].b = 0;
+						}else{
+							//index is a hit on an object in the scene
+							if (intersections.at(index_of_winning_object) > accuracy){
+								//determine the position and direction vectors at the point of intersection
 
-					Vect intersection_position = cam_ray_origin.vectAdd(cam_ray_direction.vectMult(intersections.at(index_of_winning_object)));
-					Vect intersecting_ray_direction = cam_ray_direction;
+								Vect intersection_position = cam_ray_origin.vectAdd(cam_ray_direction.vectMult(intersections.at(index_of_winning_object)));
+								Vect intersecting_ray_direction = cam_ray_direction;
 
-					Color intersection_color = getColorAt(intersection_position, intersecting_ray_direction, scene_objects, index_of_winning_object, light_sources, accuracy, ambientlight);
+								Color intersection_color = getColorAt(intersection_position, intersecting_ray_direction, scene_objects, index_of_winning_object, light_sources, accuracy, ambientlight);
+								SDL_SetRenderDrawColor(renderer, intersection_color.getColorRed()*255, intersection_color.getColorGreen()*255, intersection_color.getColorBlue()*255, 255);
+								SDL_RenderDrawPoint(renderer, x, abs(y-height));
+								//pixels[curPixelLoc].r = intersection_color.getColorRed();
+								//pixels[curPixelLoc].g = intersection_color.getColorGreen();
+								//pixels[curPixelLoc].b = intersection_color.getColorBlue();
+							}
 
-					pixels[curPixelLoc].r = intersection_color.getColorRed();
-					pixels[curPixelLoc].g = intersection_color.getColorGreen();
-					pixels[curPixelLoc].b = intersection_color.getColorBlue();
+						}
+					}
 				}
 
+				//savebmp("scene.bmp", width, height, dpi, pixels);
+				duration = ( clock() - start ) / (double) CLOCKS_PER_SEC;
+
+				cout << duration << " seconds" << endl; 
+				//Update the surface
+				SDL_RenderPresent(renderer);
+				singleRender = true;
 			}
+
 		}
 	}
 
-	savebmp("scene.bmp", width, height, dpi, pixels);
+	//Free resources and close SDL
+	close();
 
 	return 0;
 }
