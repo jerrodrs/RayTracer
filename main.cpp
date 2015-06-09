@@ -30,77 +30,17 @@ struct RGBType {
 	double b;
 };
 
+struct playerPos {
+	double x;
+	double y;
+	double z;
+};
+
 const int width = 640;
 const int height = 480;
 
 SDL_Window *window;
 SDL_Renderer *renderer;
-
-
-void savebmp (const char *filename, int w, int h, int dpi, RGBType *data){
-	FILE *f;
-	int k = w*h;
-	int s = 4*k;
-	int filesize = 54 + s;
-
-	double factor = 39.375;
-	int m = static_cast<int>(factor);
-
-	int ppm = dpi*m;
-
-	unsigned char bmpfileheader[14] = {'B', 'M', 0,0,0,0, 0,0,0,0, 54,0,0,0};
-	unsigned char bmpinfoheader[40] = {40,0,0,0, 0,0,0,0, 0,0,0,0, 1,0,24,0};	
-
-	bmpfileheader[ 2] = (unsigned char)(filesize);
-	bmpfileheader[ 3] = (unsigned char)(filesize>>8);
-	bmpfileheader[ 4] = (unsigned char)(filesize>>16);
-	bmpfileheader[ 5] = (unsigned char)(filesize>>24);
-
-	bmpinfoheader[ 4] = (unsigned char)(w);
-	bmpinfoheader[ 5] = (unsigned char)(w>>8);
-	bmpinfoheader[ 6] = (unsigned char)(w>>16);
-	bmpinfoheader[ 7] = (unsigned char)(w>>24);
-
-	bmpinfoheader[ 8] = (unsigned char)(h);
-	bmpinfoheader[ 9] = (unsigned char)(h>>8);
-	bmpinfoheader[ 10] = (unsigned char)(h>>16);
-	bmpinfoheader[ 11] = (unsigned char)(h>>24);
-
-	bmpinfoheader[ 21] = (unsigned char)(s);
-	bmpinfoheader[ 22] = (unsigned char)(s>>8);
-	bmpinfoheader[ 23] = (unsigned char)(s>>16);
-	bmpinfoheader[ 24] = (unsigned char)(s>>24);
-
-	bmpinfoheader[ 25] = (unsigned char)(ppm);
-	bmpinfoheader[ 26] = (unsigned char)(ppm>>8);
-	bmpinfoheader[ 27] = (unsigned char)(ppm>>16);
-	bmpinfoheader[ 28] = (unsigned char)(ppm>>24);
-
-	bmpinfoheader[ 29] = (unsigned char)(ppm);
-	bmpinfoheader[ 30] = (unsigned char)(ppm>>8);
-	bmpinfoheader[ 31] = (unsigned char)(ppm>>16);
-	bmpinfoheader[ 32] = (unsigned char)(ppm>>24);
-
-	f = fopen(filename,"wb");
-
-	fwrite(bmpfileheader,1,14,f);
-	fwrite(bmpinfoheader,1,40,f);
-
-	for (int i = 0; i < k; i++){
-		RGBType rgb = data[i];
-
-		double red = (data[i].r)*255;
-		double green = (data[i].g)*255;
-		double blue = (data[i].b)*255;
-
-		unsigned char color[3] = {(int)floor(blue), (int)floor(green), (int)floor(red)};
-
-		fwrite(color,1,3,f);
-	}
-
-	fclose(f);
-
-}
 
 
 int winningObjectIndex(vector<double> object_intersections){
@@ -261,6 +201,11 @@ int main(int argc, char *argv[]){
 		bool quit = false;
 		bool singleRender = false;
 
+		playerPos camtracker;
+		camtracker.x = 1.0;
+		camtracker.y = 1.5;
+		camtracker.z = -4;
+
 		//Event handler
 		SDL_Event e;
 
@@ -274,6 +219,25 @@ int main(int argc, char *argv[]){
 				if( e.type == SDL_QUIT )
 				{
 					quit = true;
+				}else if (e.type == SDL_KEYDOWN){
+					switch ( e.key.keysym.sym )
+					{
+						case SDLK_RIGHT:
+							camtracker.x += 0.1;
+							break;
+						case SDLK_LEFT:
+							camtracker.x -= 0.1;
+							break;
+							// Remeber 0,0 in SDL is left-top. So when the user pressus down, the y need to increase
+						case SDLK_DOWN:
+							camtracker.y += 0.1;
+							break;
+						case SDLK_UP:
+							camtracker.y -= 0.1;
+							break;
+						default :
+							break;
+					}
 				}
 			}
 
@@ -286,7 +250,6 @@ int main(int argc, char *argv[]){
 				//image settings
 				int dpi = 72;
 				int n = width * height;
-				RGBType *pixels = new RGBType[n];
 				double aspectratio = (double)width/(double)height;
 				double ambientlight = 0.2;
 				double accuracy = 0.000001;
@@ -296,7 +259,7 @@ int main(int argc, char *argv[]){
 				Vect Y (0,1,0);
 				Vect Z (0,0,1);
 
-				Vect campos (3, 1.5, -4);
+				Vect campos (camtracker.x, camtracker.y, camtracker.z);
 
 				Vect look_at (0,0,0); //direction of camera
 				Vect diff_btw (campos.getVectX() - look_at.getVectX(), campos.getVectY() - look_at.getVectY(), campos.getVectZ() - look_at.getVectZ()); //difference between camera's coor - look at
@@ -318,8 +281,7 @@ int main(int argc, char *argv[]){
 				vector<Source*> light_sources;
 				light_sources.push_back(dynamic_cast<Source*>(&scene_light));
 
-				Vect t (0,2,0);
-				Sphere scene_sphere (origin, 2, pretty_green);
+				Sphere scene_sphere (origin, 0.5, pretty_green);
 				Plane scene_plane (Y, -1, maroon);
 
 				vector<Object*> scene_objects;
@@ -353,22 +315,23 @@ int main(int argc, char *argv[]){
 						Ray cam_ray (cam_ray_origin, cam_ray_direction);
 
 						vector<double> intersections;
+						//0.02 seconds up to this point^
+
 
 						for (int index = 0; index < scene_objects.size(); index++){
 							//loops through each object in scene and finds intersection
 							intersections.push_back(scene_objects.at(index)->findIntersection(cam_ray));
 						}
+						//0.08 seconds to this point^
 
 						int index_of_winning_object = winningObjectIndex(intersections);
+						//0.104 seconds to this point^
 
-
+						//painting the scene
 						if (index_of_winning_object == -1){
 							//set background to black
 							SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
 							SDL_RenderDrawPoint(renderer, x, abs(y-height));
-							//pixels[curPixelLoc].r = 0;
-							//pixels[curPixelLoc].g = 0;
-							//pixels[curPixelLoc].b = 0;
 						}else{
 							//index is a hit on an object in the scene
 							if (intersections.at(index_of_winning_object) > accuracy){
@@ -380,22 +343,22 @@ int main(int argc, char *argv[]){
 								Color intersection_color = getColorAt(intersection_position, intersecting_ray_direction, scene_objects, index_of_winning_object, light_sources, accuracy, ambientlight);
 								SDL_SetRenderDrawColor(renderer, intersection_color.getColorRed()*255, intersection_color.getColorGreen()*255, intersection_color.getColorBlue()*255, 255);
 								SDL_RenderDrawPoint(renderer, x, abs(y-height));
-								//pixels[curPixelLoc].r = intersection_color.getColorRed();
-								//pixels[curPixelLoc].g = intersection_color.getColorGreen();
-								//pixels[curPixelLoc].b = intersection_color.getColorBlue();
 							}
-
 						}
+						//0.308 seconds to this point^, about 0.080 is for rendering pixels
+
+
+
+
 					}
 				}
 
-				//savebmp("scene.bmp", width, height, dpi, pixels);
 				duration = ( clock() - start ) / (double) CLOCKS_PER_SEC;
-
 				cout << duration << " seconds" << endl; 
+
 				//Update the surface
 				SDL_RenderPresent(renderer);
-				singleRender = true;
+				//singleRender = !singleRender;
 			}
 
 		}

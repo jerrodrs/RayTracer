@@ -57,10 +57,10 @@
 ##==========================================================================
 
 # The pre-processor and compiler options.
-MY_CFLAGS = -w
+MY_CFLAGS = -w -Ofast
 
 # The linker options.
-MY_LIBS   = -lglut32 -lopengl32 -lmingw32 -lSDL2main -lSDL2
+MY_LIBS   = -lglut32 -lopengl32 -lmingw32 -lSDL2main -lSDL2 -lSDL2_ttf
 
 # The pre-processor options used by the cpp (man cpp for more).
 CPPFLAGS  = -Wall
