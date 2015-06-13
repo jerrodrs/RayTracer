@@ -11,6 +11,7 @@
 #include <time.h>
 #include <ctime>
 #include <SDL/SDL.h>
+#include <SDL/SDL_thread.h>
 
 #include "Vect.h"
 #include "Ray.h"
@@ -30,17 +31,29 @@ struct RGBType {
 	double b;
 };
 
-struct playerPos {
-	double x;
-	double y;
-	double z;
-};
-
 const int width = 640;
 const int height = 480;
+const double aspectratio = (double)width/(double)height;
+const double ambientlight = 0.2;
+const double accuracy = 0.000001;
+const int numOfThreads = 8;
+
+double renderBuffer [width][height][3];
+
+bool runThread = true;
+bool displaying = false;
+int theadsFinishedRendering = 0;
+bool finishedRender = false;
+
+double camtrackerx = 1.0;
+double camtrackery = 1.5;
+double camtrackerz = -4;
 
 SDL_Window *window;
 SDL_Renderer *renderer;
+
+SDL_Thread *displayThread;
+SDL_Thread *threads[numOfThreads];
 
 
 int winningObjectIndex(vector<double> object_intersections){
@@ -221,7 +234,8 @@ bool init()
 	else
 	{
 		//Create window
-		SDL_CreateWindowAndRenderer(width, height, 0, &window, &renderer);
+		window = SDL_CreateWindow("RayTracer", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width, height, SDL_WINDOW_SHOWN);
+		renderer = SDL_CreateRenderer(window,-1,SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
 	}
 
 	return success;
@@ -234,86 +248,30 @@ void close()
 	SDL_DestroyWindow( window );
 	window = NULL;
 
+	for (int i = 0; i < numOfThreads; i++){
+		delete threads[i];
+	}
+
 	//Quit SDL subsystems
 	SDL_Quit();
 }
 
-
 int curPixelLoc;
 
-int main(int argc, char *argv[]){
-
-
-	//Start up SDL and create window
-	if( !init() )
-	{
-		printf( "Failed to initialize!\n" );
-	}
-	else
-	{	
-		//Main loop flag
-		bool quit = false;
-		bool singleRender = false;
-
-		playerPos camtracker;
-		camtracker.x = 1.0;
-		camtracker.y = 1.5;
-		camtracker.z = -4;
-
-		//Event handler
-		SDL_Event e;
-
-		//While application is running
-		while( !quit )
-		{
-			//Handle events on queue
-			while( SDL_PollEvent( &e ) != 0 )
-			{
-				//User requests quit
-				if( e.type == SDL_QUIT )
-				{
-					quit = true;
-				}else if (e.type == SDL_KEYDOWN){
-					switch ( e.key.keysym.sym )
-					{
-						case SDLK_RIGHT:
-							camtracker.x += 0.1;
-							break;
-						case SDLK_LEFT:
-							camtracker.x -= 0.1;
-							break;
-							// Remeber 0,0 in SDL is left-top. So when the user pressus down, the y need to increase
-						case SDLK_DOWN:
-							camtracker.y += 0.1;
-							break;
-						case SDLK_UP:
-							camtracker.y -= 0.1;
-							break;
-						default :
-							break;
-					}
-				}
-			}
-
-			if (singleRender == false){
+int renderFunction(void *data){
+		while(runThread){
+			if (finishedRender == false){
 				clock_t start;
 				double duration;
 				start = clock();
-				cout << "Rendering..." << endl;
-
-				//image settings
-				int dpi = 72;
-				int n = width * height;
-				double aspectratio = (double)width/(double)height;
-				double ambientlight = 0.2;
-				double accuracy = 0.000001;
+				//cout << "Rendering..." << endl;
 
 				Vect origin (0,0,0);
 				Vect X (1,0,0);
 				Vect Y (0,1,0);
 				Vect Z (0,0,1);
 
-				Vect campos (camtracker.x, camtracker.y, camtracker.z);
+				Vect campos (camtrackerx, camtrackery, camtrackerz);
 
 				Vect look_at (0,0,0); //direction of camera
 				Vect diff_btw (campos.getVectX() - look_at.getVectX(), campos.getVectY() - look_at.getVectY(), campos.getVectZ() - look_at.getVectZ()); //difference between camera's coor - look at
@@ -347,8 +305,10 @@ int main(int argc, char *argv[]){
 
 				double xamnt, yamnt;
 
+				int secNum = (int)data;
+
 				for (int x = 0; x < width; x++){
-					for (int y  = 0; y < height; y++){
+					for (int y  = (int)((height/numOfThreads)*(secNum-1)); y < (int)((height/numOfThreads)*(secNum)); y++){
 						curPixelLoc = y*width + x;
 
 						//start with no anti aliasing
@@ -387,8 +347,12 @@ int main(int argc, char *argv[]){
 						//painting the scene
 						if (index_of_winning_object == -1){
 							//set background to black
-							SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-							SDL_RenderDrawPoint(renderer, x, abs(y-height));
+							//SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+							//SDL_RenderDrawPoint(renderer, x, abs(y-height));
+
+							renderBuffer[x][y][0] = 0;
+							renderBuffer[x][y][1] = 0;
+							renderBuffer[x][y][2] = 0;
 						}else{
 							//index is a hit on an object in the scene
 							if (intersections.at(index_of_winning_object) > accuracy){
@@ -398,8 +362,12 @@ int main(int argc, char *argv[]){
 								Vect intersecting_ray_direction = cam_ray_direction;
 
 								Color intersection_color = getColorAt(intersection_position, intersecting_ray_direction, scene_objects, index_of_winning_object, light_sources, accuracy, ambientlight);
-								SDL_SetRenderDrawColor(renderer, intersection_color.getColorRed()*255, intersection_color.getColorGreen()*255, intersection_color.getColorBlue()*255, 255);
-								SDL_RenderDrawPoint(renderer, x, abs(y-height));
+								//SDL_SetRenderDrawColor(renderer, intersection_color.getColorRed()*255, intersection_color.getColorGreen()*255, intersection_color.getColorBlue()*255, 255);
+								//SDL_RenderDrawPoint(renderer, x, abs(y-height));
+								renderBuffer[x][y][0] = intersection_color.getColorRed();
+								renderBuffer[x][y][1] = intersection_color.getColorGreen();
+								renderBuffer[x][y][2] = intersection_color.getColorBlue();
+
 							}
 						}
 						//0.308 seconds to this point^, about 0.080 is for rendering pixels
@@ -412,11 +380,90 @@ int main(int argc, char *argv[]){
 
 				duration = ( clock() - start ) / (double) CLOCKS_PER_SEC;
 				cout << duration << " seconds" << endl; 
+				//theadsFinishedRendering += 1;
+				//cout << theadsFinishedRendering << endl;
+				//finishedRender = true;
 
-				//Update the surface
-				SDL_RenderPresent(renderer);
-				//singleRender = !singleRender;
 			}
+		}
+		return 0;
+}
+
+int displayFunction(void *data){
+	while (true){
+		//if ((int)theadsFinishedRendering == (int)numOfThreads){
+		//cout << theadsFinishedRendering << endl;
+			for (int x = 0; x < width; x++){
+				for (int y  = 0; y < height; y++){		
+					if (x % 2 == 0 || y % 2 == 0) continue;
+					SDL_SetRenderDrawColor(renderer, renderBuffer[x][y][0]*255, renderBuffer[x][y][1]*255, renderBuffer[x][y][2]*255, 255);
+					SDL_RenderDrawPoint(renderer, x, abs(y-height));
+				}
+			}
+			SDL_RenderPresent(renderer);
+			//theadsFinishedRendering = 0;
+			finishedRender = false;
+		//}
+	}
+	return 0;
+}
+
+
+int main(int argc, char *argv[]){
+	//Start up SDL and create window
+	if( !init() )
+	{
+		printf( "Failed to initialize!\n" );
+	}
+	else
+	{	
+		//Main loop flag
+		bool quit = false;
+		bool singleRender = false;
+		bool singleRender2 = false;
+
+		int widthBoxes = width/32;
+		int heightBoxes = height/32;
+
+		for(int i = 0; i < numOfThreads; i++){
+			int secNum = i + 1;
+			threads[i] = SDL_CreateThread(renderFunction, "Render", (void*)secNum);
+		}
+		displayThread = SDL_CreateThread(displayFunction, "Display", (void*)theadsFinishedRendering);
+		//Event handler
+		SDL_Event e;
+		
+		//While application is running
+		while( !quit )
+		{
+			//Handle events on queue
+			while( SDL_PollEvent( &e ) != 0 )
+			{
+				//User requests quit
+				if( e.type == SDL_QUIT )
+				{
+					quit = true;
+				}else if (e.type == SDL_KEYDOWN){
+					switch ( e.key.keysym.sym )
+					{
+						case SDLK_RIGHT:
+							camtrackerx += 0.1;
+							break;
+						case SDLK_LEFT:
+							camtrackerx -= 0.1;
+							break;
+							// Remeber 0,0 in SDL is left-top. So when the user pressus down, the y need to increase
+						case SDLK_DOWN:
+							camtrackery += 0.1;
+							break;
+						case SDLK_UP:
+							camtrackery -= 0.1;
+							break;
+						default :
+							break;
+					}
+				}
+			}	
 
 		}
 	}
