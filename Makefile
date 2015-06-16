@@ -1,5 +1,5 @@
 # The pre-processor and compiler options.
-MY_CFLAGS = -w -Ofast -static-libgcc -static-libstdc++
+MY_CFLAGS = -w -Ofast -static-libgcc -static-libstdc++ 
 
 # The linker options.
 MY_LIBS   = -lglut32 -lopengl32 -lmingw32 -lSDL2main -lSDL2 -lSDL2_ttf

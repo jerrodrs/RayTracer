@@ -38,7 +38,9 @@ const int height = 480;
 const double aspectratio = (double)width/(double)height;
 const double ambientlight = 0.2;
 const double accuracy = 0.000001;
-const int numOfThreads = 8;
+const int aadepth = 1;
+const double aathreshold = 0.1;
+const int numOfThreads = 6;
 
 double renderBuffer [width][height][3];
 Uint32 * pixels = new Uint32[width * height];
@@ -46,6 +48,7 @@ Uint32 * pixels = new Uint32[width * height];
 bool runThread = true;
 bool displaying = false;
 bool threadsFinishedRendering[numOfThreads];
+double threadsSpeed[numOfThreads];
 
 double camtrackerx = 1.0;
 double camtrackery = 1.5;
@@ -106,7 +109,7 @@ int winningObjectIndex(vector<double> object_intersections){
 
 }
 
-Color getColorAt(Vect intersection_position, Vect intersecting_ray_direction, vector<Object*> scene_objects, int index_of_winning_object, vector<Source*> light_sources,  double accuracy, double ambientlight){
+Color getColorAt(Vect intersection_position, Vect intersecting_ray_direction, vector<Object*> scene_objects, int index_of_winning_object, vector<Source*> light_sources,  double accuracy, double ambientlight, int bounces){
 	
 	Color winning_object_color = scene_objects.at(index_of_winning_object)->getColor();
 	Vect winning_object_normal = scene_objects.at(index_of_winning_object)->getNormalAt(intersection_position);
@@ -153,13 +156,16 @@ Color getColorAt(Vect intersection_position, Vect intersecting_ray_direction, ve
 
 		if (index_of_winning_object_with_reflection != -1){
 			//reflection ray missed everything else
-			if (reflection_intersections.at(index_of_winning_object_with_reflection) > accuracy){
+			//recursive number to keep track of light bounces
+			int numberOfBounces = bounces;
+			if (numberOfBounces < 1){
+				numberOfBounces++;
 				//determine the position and direction at the point of intersection with the ray
 				// the ray only affects the color if it reflects off something
 				Vect reflection_intersection_position = intersection_position.vectAdd(reflection_direction.vectMult(reflection_intersections.at(index_of_winning_object_with_reflection)));
 				Vect reflection_intersection_ray_direction = reflection_direction;
 
-				Color reflection_intersection_color = getColorAt(reflection_intersection_position, reflection_intersection_ray_direction,scene_objects,index_of_winning_object_with_reflection,light_sources, accuracy, ambientlight);
+				Color reflection_intersection_color = getColorAt(reflection_intersection_position, reflection_intersection_ray_direction,scene_objects,index_of_winning_object_with_reflection,light_sources, accuracy, ambientlight,numberOfBounces);
 
 				final_color = final_color.colorAdd(reflection_intersection_color.colorScalar(winning_object_color.getColorSpecial()));
 			}
@@ -265,6 +271,7 @@ void close()
 	for (int i = 0; i < numOfThreads; i++){
 		delete threads[i];
 	}
+	delete displayThread;
 	delete[] pixels;
     SDL_DestroyTexture(texture);
     SDL_DestroyRenderer(renderer);
@@ -282,6 +289,7 @@ Vect Z (0,0,1);
 
 Color white_light (1.0, 1.0, 1.0, 0);
 Color pretty_green (0.5, 1.0, 0.5, 0.3);
+Color pretty_blue (0.1, 0.5, 1.0, 1);
 Color maroon (0.5, 0.25, 0.25, 2);
 Color gray (0.5, 0.5, 0.5, 0);
 Color black (0.0, 0.0 ,0.0 ,0.5);
@@ -289,9 +297,9 @@ Color black (0.0, 0.0 ,0.0 ,0.5);
 Vect look_at (0,0,0); //direction of camera
 Vect light_pos (-7, 10, -10);
 
-Vect t (0,0,3);
+Vect t (0,3,3);
 Sphere scene_sphere (origin, 0.5, pretty_green);
-Sphere scene_sphere2 (t, 1, black);
+Sphere scene_sphere2 (t, 3, pretty_blue);
 Plane scene_plane (Y, -1, maroon);
 
 int renderFunction(void *data){
@@ -323,70 +331,130 @@ int renderFunction(void *data){
 				scene_objects.push_back(dynamic_cast<Object*>(&scene_plane));
 
 				double xamnt, yamnt;
-
-
+				int aa_index;
 
 				for (int x = 0; x < width; x++){
 					for (int y  = (int)((height/numOfThreads)*(secNum-1)); y < (int)((height/numOfThreads)*(secNum)); y++){
 
-						//start with no anti aliasing
-						if (width > height) {
-							//the image is wider than tall
-							xamnt = ((x+0.5)/width)*aspectratio - (((width-height)/(double)height)/2);
-							yamnt = ((height -y) + 0.5)/height;
-						}else if (height > width){
-							//the image is taller than wide
-							xamnt = (x+0.5)/ width;
-							yamnt = (((height - y) + 0.5)/height)/aspectratio - (((height - width)/(double)width)/2);
-						}else{
-							//the image is square
-							xamnt = (x+0.5)/width;
-							yamnt = ((height - y) + 0.5)/height;
-						}
+					
+						//blank pixel
+						double tempRed[aadepth*aadepth];
+						double tempGreen[aadepth*aadepth];
+						double tempBlue[aadepth*aadepth];
 
-						Vect cam_ray_origin = scene_cam.getCameraPosition();
-						Vect cam_ray_direction = camdir.vectAdd(camright.vectMult(xamnt - 0.5).vectAdd(camdown.vectMult(yamnt - 0.5))).normalize();
+						for (int aax = 0; aax < aadepth; aax++){
+							for(int aay = 0; aay < aadepth; aay++){
 
-						Ray cam_ray (cam_ray_origin, cam_ray_direction);
+								aa_index = aay*aadepth + aax;
 
-						vector<double> intersections;
-						//0.02 seconds up to this point^
+								srand(time(0));
+
+								//create the ray from the camera to this pixel
+								if(aadepth == 1){
+									//start with no anti aliasing
+									if (width > height) {
+										//the image is wider than tall
+										xamnt = ((x+0.5)/width)*aspectratio - (((width-height)/(double)height)/2);
+										yamnt = ((height -y) + 0.5)/height;
+									}else if (height > width){
+										//the image is taller than wide
+										xamnt = (x+0.5)/ width;
+										yamnt = (((height - y) + 0.5)/height)/aspectratio - (((height - width)/(double)width)/2);
+									}else{
+										//the image is square
+										xamnt = (x+0.5)/width;
+										yamnt = ((height - y) + 0.5)/height;
+									}
+								}else{
+									//anti alias
+									if (width > height) {
+										//the image is wider than tall
+										xamnt = ((x+(double)aax/((double)aadepth - 1))/width)*aspectratio - (((width-height)/(double)height)/2);
+										yamnt = ((height -y) + (double)aax/((double)aadepth - 1))/height;
+									}else if (height > width){
+										//the image is taller than wide
+										xamnt = (x+(double)aax/((double)aadepth - 1))/ width;
+										yamnt = (((height - y) + (double)aax/((double)aadepth - 1))/height)/aspectratio - (((height - width)/(double)width)/2);
+									}else{
+										//the image is square
+										xamnt = (x+(double)aax/((double)aadepth - 1))/width;
+										yamnt = ((height - y) + (double)aax/((double)aadepth - 1))/height;
+									}
+								}
 
 
-						for (int index = 0; index < scene_objects.size(); index++){
-							//loops through each object in scene and finds intersection
-							intersections.push_back(scene_objects.at(index)->findIntersection(cam_ray));
-						}
-						//0.08 seconds to this point^
 
-						int index_of_winning_object = winningObjectIndex(intersections);
-						//0.104 seconds to this point^
+								Vect cam_ray_origin = scene_cam.getCameraPosition();
+								Vect cam_ray_direction = camdir.vectAdd(camright.vectMult(xamnt - 0.5).vectAdd(camdown.vectMult(yamnt - 0.5))).normalize();
 
-						//painting the scene
-						if (index_of_winning_object == -1){
-							pixels[y * width + x] = 0;
-						}else{
-							//index is a hit on an object in the scene
-							if (intersections.at(index_of_winning_object) > accuracy){
-								//determine the position and direction vectors at the point of intersection
+								Ray cam_ray (cam_ray_origin, cam_ray_direction);
 
-								Vect intersection_position = cam_ray_origin.vectAdd(cam_ray_direction.vectMult(intersections.at(index_of_winning_object)));
-								Vect intersecting_ray_direction = cam_ray_direction;
+								vector<double> intersections;
+								//0.02 seconds up to this point^
 
-								Color intersection_color = getColorAt(intersection_position, intersecting_ray_direction, scene_objects, index_of_winning_object, light_sources, accuracy, ambientlight);
-								pixels[y * width + x] = createRGBA(255,(int)(intersection_color.getColorRed()*255), (int)(intersection_color.getColorGreen()*255), (int)(intersection_color.getColorBlue()*255));
 
+								for (int index = 0; index < scene_objects.size(); index++){
+									//loops through each object in scene and finds intersection
+									intersections.push_back(scene_objects.at(index)->findIntersection(cam_ray));
+								}
+								//0.08 seconds to this point^
+
+								int index_of_winning_object = winningObjectIndex(intersections);
+								//0.104 seconds to this point^
+
+								//painting the scene
+								if (index_of_winning_object == -1){
+									tempRed[aa_index] = 0;
+									tempGreen[aa_index] = 0;
+									tempBlue[aa_index] = 0;
+									//pixels[y * width + x] = 0;
+								}else{
+									//index is a hit on an object in the scene
+									if (intersections.at(index_of_winning_object) > accuracy){
+										//determine the position and direction vectors at the point of intersection
+
+										Vect intersection_position = cam_ray_origin.vectAdd(cam_ray_direction.vectMult(intersections.at(index_of_winning_object)));
+										Vect intersecting_ray_direction = cam_ray_direction;
+				
+										Color intersection_color = getColorAt(intersection_position, intersecting_ray_direction, scene_objects, index_of_winning_object, light_sources, accuracy, ambientlight,0);
+										tempRed[aa_index] = intersection_color.getColorRed()*255;
+										tempGreen[aa_index] = intersection_color.getColorGreen()*255;
+										tempBlue[aa_index] = intersection_color.getColorBlue()*255;
+
+										//pixels[y * width + x] = createRGBA(255,(int)(intersection_color.getColorRed()*255), (int)(intersection_color.getColorGreen()*255), (int)(intersection_color.getColorBlue()*255));
+
+									}
+								}
+								if(y == (int)((height/numOfThreads)*(secNum-1))){pixels[y * width + x] = 0x00ff0000;}
+								//0.308 seconds to this point^, about 0.080 is for rendering pixels
 							}
 						}
-						//0.308 seconds to this point^, about 0.080 is for rendering pixels
 
+						double totalRed = 0;
+						double totalGreen = 0;
+						double totalBlue = 0;
 
+						for(int iRed = 0; iRed < aadepth*aadepth; iRed++){
+							totalRed = totalRed + tempRed[iRed];
+						}
+						for(int iGreen = 0; iGreen < aadepth*aadepth; iGreen++){
+							totalGreen = totalGreen + tempGreen[iGreen];
+						}
+						for(int iBlue = 0; iBlue < aadepth*aadepth; iBlue++){
+							totalBlue = totalBlue + tempBlue[iBlue];
+						}
 
+						double avgRed = totalRed/(aadepth*aadepth);
+						double avgGreen = totalGreen/(aadepth*aadepth);
+						double avgBlue = totalBlue/(aadepth*aadepth);
 
+						pixels[y * width + x] = createRGBA(255,avgRed,avgGreen,avgBlue);
 					}
 				}
+				//delete tempBlue, tempGreen, tempRed;
 				threadsFinishedRendering[secNum-1] = true;
 				duration = ( clock() - start ) / (double) CLOCKS_PER_SEC;
+				threadsSpeed[secNum-1] = duration;
 				//cout << "Thread Number: " << secNum << " with time: " << duration << " seconds" << endl; 
 			}
 		}
@@ -394,12 +462,6 @@ int renderFunction(void *data){
 }
 
 int displayFunction(void *data){
-	clock_t start;
-	double duration;
-	start = clock();
-
-	double fpsCounter[5] = {0,0,0,0,0};
-	int fpsIndex = 0;
 	while (true){	
 		int count = 0;
 		for(int i = 0; i < numOfThreads; i++){
@@ -408,22 +470,18 @@ int displayFunction(void *data){
 			}
 		}
 		if (count == numOfThreads){
-			fpsIndex++;
-			if(fpsIndex > 4){fpsIndex == 0;}
-			fpsCounter[fpsIndex] = duration = ( clock() - start ) / (double) CLOCKS_PER_SEC;
 			SDL_RendererFlip flip = SDL_FLIP_VERTICAL;
 		    SDL_UpdateTexture(texture, NULL, pixels, width * 4);
 		    SDL_RenderClear(renderer);
 		    SDL_RenderCopyEx(renderer, texture, NULL, NULL, NULL, NULL, flip);
 			SDL_RenderPresent(renderer);
+			double fps = 0;
 			for(int i = 0; i < numOfThreads; i++){
 				threadsFinishedRendering[i] = false;
+				if(threadsSpeed[i] > fps){fps = threadsSpeed[i];}
+
 			}
-			double fpsAvg = 0;
-			for(int i = 0; i < 5; i++){
-				fpsAvg += fpsCounter[i];
-			}
-			cout << 1/(fpsAvg/5) << " fps" << endl;
+			cout << 1/fps << "fps" << endl;
 
 		}
 
@@ -479,7 +537,6 @@ int main(int argc, char *argv[]){
 						case SDLK_LEFT:
 							camtrackerx -= 0.1;
 							break;
-							// Remeber 0,0 in SDL is left-top. So when the user pressus down, the y need to increase
 						case SDLK_DOWN:
 							camtrackery += 0.1;
 							break;
