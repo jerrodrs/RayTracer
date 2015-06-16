@@ -24,6 +24,7 @@
 #include "Plane.h"
 #include "Object.h"
 #include "Source.h"
+#include "raytracevars.h"
 
 using namespace std;
 
@@ -33,20 +34,9 @@ struct RGBType {
 	double b;
 };
 
-const int width = 640;
-const int height = 480;
-const double aspectratio = (double)width/(double)height;
-const double ambientlight = 0.2;
-const double accuracy = 0.000001;
-const int aadepth = 1;
-const double aathreshold = 0.1;
-const int numOfThreads = 6;
-
-double renderBuffer [width][height][3];
 Uint32 * pixels = new Uint32[width * height];
 
 bool runThread = true;
-bool displaying = false;
 bool threadsFinishedRendering[numOfThreads];
 double threadsSpeed[numOfThreads];
 
@@ -158,7 +148,7 @@ Color getColorAt(Vect intersection_position, Vect intersecting_ray_direction, ve
 			//reflection ray missed everything else
 			//recursive number to keep track of light bounces
 			int numberOfBounces = bounces;
-			if (numberOfBounces < 1){
+			if (numberOfBounces < 2){
 				numberOfBounces++;
 				//determine the position and direction at the point of intersection with the ray
 				// the ray only affects the color if it reflects off something
@@ -298,8 +288,11 @@ Vect look_at (0,0,0); //direction of camera
 Vect light_pos (-7, 10, -10);
 
 Vect t (0,3,3);
+
+
 Sphere scene_sphere (origin, 0.5, pretty_green);
 Sphere scene_sphere2 (t, 3, pretty_blue);
+
 Plane scene_plane (Y, -1, maroon);
 
 int renderFunction(void *data){
@@ -310,9 +303,10 @@ int renderFunction(void *data){
 				double duration;
 				start = clock();
 
-				Vect campos (camtrackerx, camtrackery, camtrackerz);
+				Vect campos (camtrackerx-1.2, camtrackery, camtrackerz);
 
-
+				//Vect cam_sphere_pos (camtrackerx,camtrackery,camtrackerz);
+				//Sphere cam_sphere (cam_sphere_pos, 1, pretty_blue);
 				Vect diff_btw (campos.getVectX() - look_at.getVectX(), campos.getVectY() - look_at.getVectY(), campos.getVectZ() - look_at.getVectZ()); //difference between camera's coor - look at
 
 				Vect camdir = diff_btw.negative().normalize();
@@ -328,6 +322,7 @@ int renderFunction(void *data){
 				vector<Object*> scene_objects;
 				scene_objects.push_back(dynamic_cast<Object*>(&scene_sphere));
 				scene_objects.push_back(dynamic_cast<Object*>(&scene_sphere2));
+				//scene_objects.push_back(dynamic_cast<Object*>(&cam_sphere));
 				scene_objects.push_back(dynamic_cast<Object*>(&scene_plane));
 
 				double xamnt, yamnt;

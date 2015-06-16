@@ -1,5 +1,5 @@
 ./main.o: main.cpp Vect.h Ray.h Camera.h Color.h Light.h Source.h Sphere.h \
- Object.h Plane.h
+ Object.h Plane.h raytracevars.h
 
 Vect.h:
 
@@ -18,3 +18,5 @@ Sphere.h:
 Object.h:
 
 Plane.h:
+
+raytracevars.h:
