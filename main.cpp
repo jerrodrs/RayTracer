@@ -5,6 +5,8 @@
 #include <vector>
 #include <cmath>
 #include <limits>
+#include <queue>
+
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -39,11 +41,11 @@ const double accuracy = 0.000001;
 const int numOfThreads = 8;
 
 double renderBuffer [width][height][3];
+Uint32 * pixels = new Uint32[width * height];
 
 bool runThread = true;
 bool displaying = false;
-int theadsFinishedRendering = 0;
-bool finishedRender = false;
+bool threadsFinishedRendering[numOfThreads];
 
 double camtrackerx = 1.0;
 double camtrackery = 1.5;
@@ -51,11 +53,12 @@ double camtrackerz = -4;
 
 SDL_Window *window;
 SDL_Renderer *renderer;
+SDL_Texture * texture;
 
 SDL_Thread *displayThread;
 SDL_Thread *threads[numOfThreads];
 
-
+//RAY TRACE ENGINE FUNCTIONS
 int winningObjectIndex(vector<double> object_intersections){
 	// return the index of the winning intersection
 	int index_of_minimum_value;
@@ -220,6 +223,15 @@ Color getColorAt(Vect intersection_position, Vect intersecting_ray_direction, ve
 	return final_color.clip();
 }
 
+unsigned long createRGBA(int a, int r, int g, int b)
+{   
+    return ((a & 0xff) << 24) + ((r & 0xff) << 16) + ((g & 0xff) << 8)
+           + (b & 0xff);
+}
+
+
+
+//SDL INIT AND CLOSE
 bool init()
 {
 	//Initialization flag
@@ -236,6 +248,8 @@ bool init()
 		//Create window
 		window = SDL_CreateWindow("RayTracer", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width, height, SDL_WINDOW_SHOWN);
 		renderer = SDL_CreateRenderer(window,-1,SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+		texture = SDL_CreateTexture(renderer,
+        SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STATIC, width, height);
 	}
 
 	return success;
@@ -251,29 +265,46 @@ void close()
 	for (int i = 0; i < numOfThreads; i++){
 		delete threads[i];
 	}
+	delete[] pixels;
+    SDL_DestroyTexture(texture);
+    SDL_DestroyRenderer(renderer);
 
 	//Quit SDL subsystems
 	SDL_Quit();
 }
 
-int curPixelLoc;
+
+//SCENE VARIABLES
+Vect origin (0,0,0);
+Vect X (1,0,0);
+Vect Y (0,1,0);
+Vect Z (0,0,1);
+
+Color white_light (1.0, 1.0, 1.0, 0);
+Color pretty_green (0.5, 1.0, 0.5, 0.3);
+Color maroon (0.5, 0.25, 0.25, 2);
+Color gray (0.5, 0.5, 0.5, 0);
+Color black (0.0, 0.0 ,0.0 ,0.5);
+
+Vect look_at (0,0,0); //direction of camera
+Vect light_pos (-7, 10, -10);
+
+Vect t (0,0,3);
+Sphere scene_sphere (origin, 0.5, pretty_green);
+Sphere scene_sphere2 (t, 1, black);
+Plane scene_plane (Y, -1, maroon);
 
 int renderFunction(void *data){
 		while(runThread){
-			if (finishedRender == false){
+			int secNum = (int)data;
+			if(threadsFinishedRendering[secNum-1] == false){
 				clock_t start;
 				double duration;
 				start = clock();
-				//cout << "Rendering..." << endl;
-
-				Vect origin (0,0,0);
-				Vect X (1,0,0);
-				Vect Y (0,1,0);
-				Vect Z (0,0,1);
 
 				Vect campos (camtrackerx, camtrackery, camtrackerz);
 
-				Vect look_at (0,0,0); //direction of camera
+
 				Vect diff_btw (campos.getVectX() - look_at.getVectX(), campos.getVectY() - look_at.getVectY(), campos.getVectZ() - look_at.getVectZ()); //difference between camera's coor - look at
 
 				Vect camdir = diff_btw.negative().normalize();
@@ -282,21 +313,9 @@ int renderFunction(void *data){
 
 				Camera scene_cam (campos, camdir, camright, camdown);
 
-				Color white_light (1.0, 1.0, 1.0, 0);
-				Color pretty_green (0.5, 1.0, 0.5, 0.3);
-				Color maroon (0.5, 0.25, 0.25, 2);
-				Color gray (0.5, 0.5, 0.5, 0);
-				Color black (0.0, 0.0 ,0.0 ,0.5);
-
-				Vect light_pos (-7, 10, -10);
 				Light scene_light (light_pos,white_light);
 				vector<Source*> light_sources;
 				light_sources.push_back(dynamic_cast<Source*>(&scene_light));
-
-				Vect t (0,0,3);
-				Sphere scene_sphere (origin, 0.5, pretty_green);
-				Sphere scene_sphere2 (t, 1, black);
-				Plane scene_plane (Y, -1, maroon);
 
 				vector<Object*> scene_objects;
 				scene_objects.push_back(dynamic_cast<Object*>(&scene_sphere));
@@ -305,11 +324,10 @@ int renderFunction(void *data){
 
 				double xamnt, yamnt;
 
-				int secNum = (int)data;
+
 
 				for (int x = 0; x < width; x++){
 					for (int y  = (int)((height/numOfThreads)*(secNum-1)); y < (int)((height/numOfThreads)*(secNum)); y++){
-						curPixelLoc = y*width + x;
 
 						//start with no anti aliasing
 						if (width > height) {
@@ -346,13 +364,7 @@ int renderFunction(void *data){
 
 						//painting the scene
 						if (index_of_winning_object == -1){
-							//set background to black
-							//SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-							//SDL_RenderDrawPoint(renderer, x, abs(y-height));
-
-							renderBuffer[x][y][0] = 0;
-							renderBuffer[x][y][1] = 0;
-							renderBuffer[x][y][2] = 0;
+							pixels[y * width + x] = 0;
 						}else{
 							//index is a hit on an object in the scene
 							if (intersections.at(index_of_winning_object) > accuracy){
@@ -362,11 +374,7 @@ int renderFunction(void *data){
 								Vect intersecting_ray_direction = cam_ray_direction;
 
 								Color intersection_color = getColorAt(intersection_position, intersecting_ray_direction, scene_objects, index_of_winning_object, light_sources, accuracy, ambientlight);
-								//SDL_SetRenderDrawColor(renderer, intersection_color.getColorRed()*255, intersection_color.getColorGreen()*255, intersection_color.getColorBlue()*255, 255);
-								//SDL_RenderDrawPoint(renderer, x, abs(y-height));
-								renderBuffer[x][y][0] = intersection_color.getColorRed();
-								renderBuffer[x][y][1] = intersection_color.getColorGreen();
-								renderBuffer[x][y][2] = intersection_color.getColorBlue();
+								pixels[y * width + x] = createRGBA(255,(int)(intersection_color.getColorRed()*255), (int)(intersection_color.getColorGreen()*255), (int)(intersection_color.getColorBlue()*255));
 
 							}
 						}
@@ -377,33 +385,49 @@ int renderFunction(void *data){
 
 					}
 				}
-
+				threadsFinishedRendering[secNum-1] = true;
 				duration = ( clock() - start ) / (double) CLOCKS_PER_SEC;
-				cout << duration << " seconds" << endl; 
-				//theadsFinishedRendering += 1;
-				//cout << theadsFinishedRendering << endl;
-				//finishedRender = true;
-
+				//cout << "Thread Number: " << secNum << " with time: " << duration << " seconds" << endl; 
 			}
 		}
 		return 0;
 }
 
 int displayFunction(void *data){
-	while (true){
-		//if ((int)theadsFinishedRendering == (int)numOfThreads){
-		//cout << theadsFinishedRendering << endl;
-			for (int x = 0; x < width; x++){
-				for (int y  = 0; y < height; y++){		
-					if (x % 2 == 0 || y % 2 == 0) continue;
-					SDL_SetRenderDrawColor(renderer, renderBuffer[x][y][0]*255, renderBuffer[x][y][1]*255, renderBuffer[x][y][2]*255, 255);
-					SDL_RenderDrawPoint(renderer, x, abs(y-height));
-				}
+	clock_t start;
+	double duration;
+	start = clock();
+
+	double fpsCounter[5] = {0,0,0,0,0};
+	int fpsIndex = 0;
+	while (true){	
+		int count = 0;
+		for(int i = 0; i < numOfThreads; i++){
+			if(threadsFinishedRendering[i] == true){
+				count++;
 			}
+		}
+		if (count == numOfThreads){
+			fpsIndex++;
+			if(fpsIndex > 4){fpsIndex == 0;}
+			fpsCounter[fpsIndex] = duration = ( clock() - start ) / (double) CLOCKS_PER_SEC;
+			SDL_RendererFlip flip = SDL_FLIP_VERTICAL;
+		    SDL_UpdateTexture(texture, NULL, pixels, width * 4);
+		    SDL_RenderClear(renderer);
+		    SDL_RenderCopyEx(renderer, texture, NULL, NULL, NULL, NULL, flip);
 			SDL_RenderPresent(renderer);
-			//theadsFinishedRendering = 0;
-			finishedRender = false;
-		//}
+			for(int i = 0; i < numOfThreads; i++){
+				threadsFinishedRendering[i] = false;
+			}
+			double fpsAvg = 0;
+			for(int i = 0; i < 5; i++){
+				fpsAvg += fpsCounter[i];
+			}
+			cout << 1/(fpsAvg/5) << " fps" << endl;
+
+		}
+
+
 	}
 	return 0;
 }
@@ -429,7 +453,10 @@ int main(int argc, char *argv[]){
 			int secNum = i + 1;
 			threads[i] = SDL_CreateThread(renderFunction, "Render", (void*)secNum);
 		}
-		displayThread = SDL_CreateThread(displayFunction, "Display", (void*)theadsFinishedRendering);
+		displayThread = SDL_CreateThread(displayFunction, "Display", (void*)NULL);
+
+
+
 		//Event handler
 		SDL_Event e;
 		
