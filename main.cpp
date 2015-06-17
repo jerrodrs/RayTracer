@@ -1,17 +1,10 @@
 #include <iostream>
-#include <fstream>
-#include <sstream>
-#include <string>
 #include <vector>
 #include <cmath>
-#include <limits>
-#include <queue>
-
 
 #include <stdlib.h>
 #include <stdio.h>
 #include <time.h>
-#include <ctime>
 #include <SDL/SDL.h>
 #include <SDL/SDL_thread.h>
 
